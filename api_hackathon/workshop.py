@@ -51,7 +51,45 @@ def review_contract(spec: dict, ai) -> list[dict]:
          "/paths/~1orders/get" is spec["paths"]["/orders"]["get"].
          It is not "//orders" -- the slash belongs to the key name "/orders".
     """
-    return ai.ask("contract_review", spec)
+    findings = ai.ask("contract_review", spec)
+    verified = []
+
+    for finding in findings:
+        path = finding.get("path")
+        method = finding.get("method")
+        pointer = finding.get("evidence_pointer")
+
+        # Check 1: path and method must exist
+        if path not in spec.get("paths", {}):
+            continue
+
+        if method not in spec["paths"][path]:
+            continue
+
+        # Check 2: evidence_pointer must resolve
+        if not pointer:
+            continue
+
+        current = spec
+
+        try:
+            parts = pointer.split("/")[1:]
+
+            for part in parts:
+                part = part.replace("~1", "/").replace("~0", "~")
+
+                if isinstance(current, list):
+                    current = current[int(part)]
+                else:
+                    current = current[part]
+
+        except (KeyError, IndexError, ValueError, TypeError):
+            continue
+
+        verified.append(finding)
+
+    return verified
+
 
 
 def design_negative_tests(spec: dict, ai) -> list[dict]:
