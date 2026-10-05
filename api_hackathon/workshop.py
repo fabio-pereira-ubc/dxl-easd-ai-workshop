@@ -93,39 +93,33 @@ def review_contract(spec: dict, ai) -> list[dict]:
 
 
 def design_negative_tests(spec: dict, ai) -> list[dict]:
-    """Level 2 -- return runnable test ideas for operations that really exist.
+    # Get all findings from AI
+    findings = ai.ask("negative_tests", spec)
 
-    ai.ask("negative_tests", spec) returns a list like:
-        [
-          {
-            "name": "zero limit",
-            "method": "get",
-            "path": "/orders",
-            "input": {"limit": 0},
-            "expected_status": 400
-          },
-          ...
-          {
-            "name": "delete customer record",
-            "method": "delete",
-            "path": "/customers/c-1",
-            "input": {},
-            "expected_status": 204
-          }
-        ]
+    # Filter: keep only valid test cases
+    valid_tests = []
 
-    Compare each test case against the OpenAPI v1 document in
-    data/openapi-v1.json (same spec as http://localhost:8081/api/v1).
+    for case in findings:
+        # Rule 1: Check if endpoint/method exists in spec
+        if case["path"] not in spec["paths"]:
+            continue
+        if case["method"] not in spec["paths"][case["path"]]:
+            continue
 
-    Tip: keep a test case only if ALL of these are true.
-      1. spec["paths"][case["path"]][case["method"]] exists.
-      2. expected_status is one of 400, 401, 403, 404, 409, or 422.
-         A 204 from a non-existent endpoint is a red flag.
-      3. The case has all required fields: name, method, path, input,
-         expected_status.
-    """
-    return ai.ask("negative_tests", spec)
+        # Rule 2: Check if expected_status is valid (400, 401, 403, 404, 409, 422)
+        valid_statuses = [400, 401, 403, 404, 409, 422]
+        if case["expected_status"] not in valid_statuses:
+            continue
 
+        # Rule 3: Check all required fields exist
+        required_fields = ["name", "method", "path", "input", "expected_status"]
+        if not all(field in case for field in required_fields):
+            continue
+
+        # If all checks pass, keep this test case
+        valid_tests.append(case)
+
+    return valid_tests
 
 def diagnose_incident(logs: str, ai) -> dict:
     """Level 3 -- select a diagnosis whose evidence appears in the logs.
