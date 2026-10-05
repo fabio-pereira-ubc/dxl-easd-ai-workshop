@@ -195,4 +195,64 @@ def review_migration(v1: dict, v2: dict, ai) -> list[dict]:
       "schema_changed"          -- parameter["schema"] differs between v1 and v2.
                                    If the schemas are identical the claim is false.
     """
-    return ai.ask("migration_review", {"v1": v1, "v2": v2})
+    claims = ai.ask("migration_review", {"v1": v1, "v2": v2})
+    verified = []
+
+    for claim in claims:
+        kind = claim.get("kind")
+        path = claim.get("path")
+        method = claim.get("method", "").lower()
+        parameter = claim.get("parameter")
+
+        v1_operation = v1.get("paths", {}).get(path, {}).get(method)
+        v2_operation = v2.get("paths", {}).get(path, {}).get(method)
+
+        # 1. Operation existed in v1 but is gone in v2
+        if kind == "operation_removed":
+            if v1_operation is not None and v2_operation is None:
+                verified.append(claim)
+
+        # 2. Parameter was optional in v1 but required in v2
+        elif kind == "parameter_became_required":
+            if v1_operation is not None and v2_operation is not None:
+                v1_param = next(
+                    (p for p in v1_operation.get("parameters", [])
+                     if p.get("name") == parameter),
+                    None
+                )
+                v2_param = next(
+                    (p for p in v2_operation.get("parameters", [])
+                     if p.get("name") == parameter),
+                    None
+                )
+
+                if (
+                    v1_param is not None
+                    and v2_param is not None
+                    and v1_param.get("required", False) is False
+                    and v2_param.get("required", False) is True
+                ):
+                    verified.append(claim)
+
+        # 3. Parameter schema must actually differ
+        elif kind == "schema_changed":
+            if v1_operation is not None and v2_operation is not None:
+                v1_param = next(
+                    (p for p in v1_operation.get("parameters", [])
+                     if p.get("name") == parameter),
+                    None
+                )
+                v2_param = next(
+                    (p for p in v2_operation.get("parameters", [])
+                     if p.get("name") == parameter),
+                    None
+                )
+
+                if (
+                    v1_param is not None
+                    and v2_param is not None
+                    and v1_param.get("schema") != v2_param.get("schema")
+                ):
+                    verified.append(claim)
+
+    return verified
